@@ -1,0 +1,138 @@
+---
+title: "Bank Marketing"
+output:
+   pdf_document: default
+---
+
+## Prediction Model for Bank Direct Marketing Campaign ##
+
+This is a public dataset which was made usable for research by S. Moro, R. Laureano and P. Cortez. Using Data Mining for Bank Direct Marketing: An Application of the CRISP-DM Methodology. The data was used for direct marketing campaigns of a Portuguese banking institution. 
+The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required,in order to access if the product (bank term deposit) would be (or not) subscribed. The classification goal is to predict if the client will subscribe a term deposit (variable y).
+
+## Library ##
+
+```{r echo = FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+```
+
+
+## Loading Dataset ##
+
+```{r echo=FALSE}
+setwd("C:/Program Files/RStudio")
+BankData <- fread("C:/Program Files/RStudio/bank/bank-additional-full.csv")
+```
+
+## Data Cleaning 
+
+```{r echo = FALSE}
+BankData <- data.frame(BankData)
+#BankData <- subset(BankData, select =-day)
+BankData$job <- as.factor(BankData$job)
+BankData$marital <- as.factor(BankData$marital)
+BankData$education <- as.factor(BankData$education)
+BankData$contact <- as.factor(BankData$contact)
+BankData$month <- as.factor(BankData$month)
+BankData$poutcome <- as.factor(BankData$poutcome)
+BankData$default <- as.factor(BankData$default)
+BankData$housing <- as.factor(BankData$housing)
+BankData$loan <- as.factor(BankData$loan)
+BankData$y <- as.factor(BankData$y)
+BankData$day_of_week <- as.factor(BankData$day_of_week)
+BankData$age <- as.numeric(BankData$age)
+BankData$duration <- as.numeric(BankData$duration)
+BankData$campaign <- as.numeric(BankData$campaign)
+BankData$pdays <- as.numeric(BankData$pdays)
+BankData$previous <- as.numeric(BankData$previous)
+summary(BankData)
+# Based on the summary I arrive at the following conclusios:-
+# 1. The pdays column shows a lot of difference between min and max. There is lot of difference 
+# between the median and the mode which shows there are ouliers in this column and should be 
+# removed or replaced otherwise the prediction will be biased.
+# Replacing entries with 999 by 25 days since client was last contacted or not contacted at all. 
+for (i in 1:nrow(BankData)){
+  if (BankData[i,13] == 999){
+    BankData[i,13] <- 25
+  }
+}
+
+# 2. The duration column shows a lot of difference between min and max. There is lot of
+# difference between the median and the mode which shows there are ouliers in this column which
+# need to be removed otherwise the prediction will be biased.
+# The cut off limit is 490 seconds which is about 8 minutes call.
+par(mfrow = c(1,2))
+duration <- subset(BankData, duration < 490)
+hist(BankData$duration, main = "Histogram of Bank Data with \noutliers in duration")
+hist(duration$duration, main = "Histogram of Bank Data without \noutliers in duration")
+boxplot(BankData$duration, horizontal = T, main = "duration With Outliers")
+boxplot(duration$duration, horizontal = T, main = "duration Without Outliers")
+```
+
+
+## Training and Testing datasets ##
+```{r echo = FALSE}
+par(mfrow = c(1,1))
+TestBank <- duration
+summary(TestBank)
+hist(TestBank$age, col = "light blue", freq = FALSE)
+size <- nrow(TestBank) * 0.8
+validation_index <- sample(1:nrow(TestBank), size = size)
+validation <- TestBank[-validation_index,]
+TestBank <- TestBank[validation_index,]
+# bank.rpart <- rpart(y ~ ., data = bank, control=rpart.control(cp=.009))
+# fancyRpartPlot(bank.rpart, tweak = 1.5)
+```
+
+
+## Building Models ##
+
+```{r echo = FALSE}
+# Run algorithms using 10-fold cross validation
+set.seed(123)
+# using decision tree model 
+bank.rpart <- rpart(y ~ ., data = TestBank)
+fancyRpartPlot(bank.rpart)
+predictions <- predict(bank.rpart, validation, type = "class")
+confusion.matrix <- prop.table(table(predictions, validation$y))
+accuracy <- confusion.matrix[1,1] + confusion.matrix[2,2] 
+accuracy
+summary(predictions)
+summary(confusion.matrix)
+#TestBank$y <- predictions
+
+# using knn method
+control <- trainControl(method = "cv", number = 10)
+metric <- "Accuracy"
+fit.knn <- train(y~., data = TestBank, method = "knn", metric = metric, trControl = control)
+predknn <- predict(fit.knn, validation)
+confusionMatrix(predknn, validation$y)
+
+# using svm method
+fit.svm <- svm(y~., data = TestBank, metric = metric, trControl = control)
+predsvm <- predict(fit.svm, validation)
+confusionMatrix(predsvm, validation$y)
+
+# using random forest
+fit.rf <- randomForest(y~., data = TestBank, metric = metric, trControl = control)
+predrf <- predict(fit.rf, validation)
+confusionMatrix(predrf, validation$y)
+
+```
+
+## Conclusion ##
+
+1. Based on the prediction produced using rpart, SVM, Random Forest and KNN models the accuracy comes to 94%. It was a small validation datset (20%), but this result is within our expected margin of 97% +/-4%. This definitely suggest that we may have an accurate and a reliable accurate model.
+
+The decision tree provides following facts about the data:-
+1. The top node shows 93% of the customers are employed and 7% are unemployed. This shows that the top node represents 100% of the customer base.
+
+2. On looking at the node for customers who are unemployed and the duration of the call was less than 162 seconds, the prediction model concludes that 84% of them did not subscribe to the term account. Only 16% of them subscribed to term deposit account. 
+
